@@ -1,39 +1,35 @@
-import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
-import { useFonts } from 'expo-font';
-import { Stack } from 'expo-router';
-import * as SplashScreen from 'expo-splash-screen';
-import { StatusBar } from 'expo-status-bar';
-import { useEffect } from 'react';
-import 'react-native-reanimated';
+import { AuthProvider } from "@/Context/AuthContext";
+import { getStorageItemAsync } from "@/utils/storage";
+import axios from "axios";
+import { Stack } from "expo-router";
+import React, { useEffect } from "react";
 
-import { useColorScheme } from '@/hooks/useColorScheme';
-
-// Prevent the splash screen from auto-hiding before asset loading is complete.
-SplashScreen.preventAutoHideAsync();
-
-export default function RootLayout() {
-  const colorScheme = useColorScheme();
-  const [loaded] = useFonts({
-    SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
-  });
-
+export default function Layout() {
   useEffect(() => {
-    if (loaded) {
-      SplashScreen.hideAsync();
-    }
-  }, [loaded]);
+    const setAxiosDefaults = async () => {
+      // Set base URL
+      axios.defaults.baseURL = process.env.EXPO_PUBLIC_MY_API;
+      axios.defaults.withCredentials = true;
 
-  if (!loaded) {
-    return null;
-  }
+      // Set default headers
+      axios.defaults.headers.common["Accept"] = "application/json";
+      axios.defaults.headers.common["Content-Type"] = "application/json";
+
+      // Set auth token if exists
+      const token = await getStorageItemAsync("userToken");
+      if (token) {
+        axios.defaults.headers.common["Authorization"] = token;
+      }
+    };
+
+    setAxiosDefaults();
+  }, []);
 
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <Stack>
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="+not-found" />
+    <AuthProvider>
+      <Stack screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="SplashScreenComponent" />
       </Stack>
-      <StatusBar style="auto" />
-    </ThemeProvider>
+    </AuthProvider>
   );
 }
