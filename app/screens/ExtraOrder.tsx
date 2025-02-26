@@ -7,6 +7,7 @@ import {
   Alert,
   FlatList,
   useColorScheme,
+  RefreshControl,
 } from "react-native";
 import { useLocalSearchParams, router } from "expo-router";
 import { ThemedView } from "@/components/ThemedView";
@@ -17,6 +18,7 @@ import axios from "axios";
 import { useAuth } from "@/Context/AuthContext";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { MaterialIcons } from '@expo/vector-icons';
+import { getMenuFromDb, addExtraOrderItems } from "@/utils/sqliteHelper";
 
 interface MenuItem {
   item_id: string;
@@ -41,6 +43,7 @@ const ExtraOrder = () => {
   const [category, setCategory] = useState("0");
   const [errorMessage, setErrorMessage] = useState("");
   const [isLoading, setIsLoading] = useState(true); // Add loading state
+  const [refreshing, setRefreshing] = useState(false); // State for refreshing
 
   // Initialize extra cart from original order
   useEffect(() => {
@@ -61,31 +64,33 @@ const ExtraOrder = () => {
   }, [params.orderItems]);
 
   // Fetch menus with caching
-  useEffect(() => {
-    const loadMenus = async () => {
-      try {
-        // Try to load from cache first
-        const cachedMenus = await AsyncStorage.getItem("vendorMenus");
-        if (cachedMenus) {
-          setMenus(JSON.parse(cachedMenus));
-        }
-
-        // Fetch fresh data
-        const response = await axios.get<MenuItem[]>(`/menus/vendor/${user?.vendor_id}`);
-        setMenus(response.data);
-        await AsyncStorage.setItem("vendorMenus", JSON.stringify(response.data));
-      } catch (error) {
-        setErrorMessage("Failed to load menus");
-        console.error(error);
-      } finally {
-        setIsLoading(false); // Set loading to false after fetching
+  const loadMenus = async () => {
+    try {
+      // Try to load from cache first
+      const cachedMenus = await getMenuFromDb();
+      if (cachedMenus) {
+        setMenus(cachedMenus);
       }
-    };
+    } catch (error) {
+      setErrorMessage("Failed to load menus");
+      console.error(error);
+    } finally {
+      setIsLoading(false); // Set loading to false after fetching
+    }
+  };
 
+  useEffect(() => {
     if (user?.vendor_id) {
       loadMenus();
     }
   }, [user?.vendor_id]);
+
+  // Handle pull-to-refresh
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await loadMenus(); // Reload menus
+    setRefreshing(false);
+  };
 
   // Toggle items in extra cart
   const toggleOrderItem = (id: string) => {
@@ -146,15 +151,20 @@ const ExtraOrder = () => {
         total_price: parseFloat(calculateTotal()),
       };
 
-     
+      // Save extra items to local SQLite database
+      await addExtraOrderItems(
+        params.orderId as string,
+        extraOrderData.items,
+        extraOrderData.total_price,
+        extraOrderData.count_items
+      );
 
-      try {
-        // Try to sync immediately
-        await axios.put(`/orders/extra/${params.orderId}`, extraOrderData);
-      } catch (error) {
-        // Will sync later if fails
-        console.error('Failed to sync immediately:', error);
-      }
+      // // Optionally, you can also sync with the server
+      // try {
+      //   await axios.put(`/orders/extra/${params.orderId}`, extraOrderData);
+      // } catch (error) {
+      //   console.error('Failed to sync immediately:', error);
+      // }
 
       Alert.alert(
         "Success", 
@@ -247,6 +257,9 @@ const ExtraOrder = () => {
               />
             );
           }}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+          }
         />
       )}
 

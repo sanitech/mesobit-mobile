@@ -13,6 +13,7 @@ import {
   clearStorageAsync,
 } from "../utils/storage";
 import asyncStore from "@react-native-async-storage/async-storage";
+import { syncManager } from "@/app/utils/syncManager";
 
 // Define types for user and context
 interface User {

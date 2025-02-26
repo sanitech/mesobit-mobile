@@ -197,9 +197,6 @@ const Checkout = () => {
         "Error",
         error instanceof Error ? error.message : "Failed to process order"
       );
-      console.log( 
-        error instanceof Error ? error.message : "Failed to process order"
-      )
     } finally {
       setIsProcessing(false);
     }
@@ -312,7 +309,7 @@ const Checkout = () => {
                     style={[
                       styles.discountButtonText,
                       discountPercent === percent &&
-                      styles.activeDiscountButtonText,
+                        styles.activeDiscountButtonText,
                     ]}
                   >
                     {percent}%
@@ -399,7 +396,7 @@ const Checkout = () => {
             styles.processButton,
             ((orderType === "Delivery" && !deliveryInfo.phoneNumber) ||
               isProcessing) &&
-            styles.disabledButton,
+              styles.disabledButton,
           ]}
           disabled={
             (orderType === "Delivery" && !deliveryInfo.phoneNumber) ||
@@ -415,7 +412,6 @@ const Checkout = () => {
     </ThemedView>
   );
 };
-
 
 const styles = StyleSheet.create({
   container: {

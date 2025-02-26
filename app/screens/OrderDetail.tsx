@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -10,6 +10,7 @@ import {
   TextInput,
   Platform,
   ActivityIndicator,
+  RefreshControl,
 } from "react-native";
 import { ThemedView } from "@/components/ThemedView";
 import Header from "@/components/Header";
@@ -19,6 +20,11 @@ import { useAuth } from "@/Context/AuthContext";
 import { router, useLocalSearchParams } from "expo-router";
 import axios from "axios";
 import { ThemedText } from "@/components/ThemedText";
+import {
+  getOrderDetailsById,
+  updateOrderStatus,
+  cancelOrder,
+} from "@/utils/sqliteHelper";
 
 interface OrderItem {
   item_id: string;
@@ -126,12 +132,12 @@ type UserRole = "cashier" | "kitchen" | "waiter";
 // Update ROLE_PERMISSIONS to be more specific about which actions each role can see
 const ROLE_PERMISSIONS = {
   cashier: {
-    canAccept: true,
-    canMarkReady: true,
+    canAccept: false,
+    canMarkReady: false,
     canComplete: true,
     canCancel: true,
     canAddItems: true,
-    showButtons: ["accept", "ready", "complete", "cancel", "addItems"],
+    showButtons: ["complete", "cancel", "addItems"],
   },
   kitchen: {
     canAccept: true,
@@ -187,8 +193,8 @@ const ActionButtons: React.FC<ActionButtonsProps> = ({
   const renderActionButtons = () => {
     if (
       !order ||
-      order.status === "cancelled" ||
-      order.status === "completed"
+      order.status === "completed" ||
+      order.status === "cancelled"
     ) {
       return null;
     }
@@ -196,91 +202,86 @@ const ActionButtons: React.FC<ActionButtonsProps> = ({
     const permissions =
       ROLE_PERMISSIONS[userRole as UserRole] || ROLE_PERMISSIONS.kitchen;
 
-    // Check if waiter can complete their own order
-    const canCompleteOrder = () => {
-      if (userRole === "waiter") {
-        return order?.staff_id === userId;
-      }
-      return permissions.canComplete;
-    };
-
     return (
       <View style={styles.actionRow}>
-        {/* Accept Order - Kitchen & Cashier Only */}
-        {permissions.showButtons.includes("accept") &&
-          order.status === "Pending" && (
-            <TouchableOpacity
-              style={[styles.primaryButton, styles.acceptButton]}
-              onPress={() => onStatusChange("In Progress")}
-            >
-              <View style={styles.buttonInner}>
-                <View style={styles.iconContainer}>
-                  <MaterialCommunityIcons
-                    name="progress-check"
-                    size={24}
-                    color="white"
-                  />
-                </View>
-                <View style={styles.buttonTextContainer}>
-                  <Text style={styles.buttonTitle}>Accept Order</Text>
-                  <Text style={styles.buttonSubtext}>
-                    Start preparing the order
-                  </Text>
-                </View>
+        {/* Complete Order - Cashier Only */}
+        {userRole === "cashier" && (
+          <TouchableOpacity
+            style={[styles.primaryButton, styles.completeButton]}
+            onPress={() => onStatusChange("completed")}
+          >
+            <View style={styles.buttonInner}>
+              <View style={styles.iconContainer}>
+                <MaterialCommunityIcons
+                  name="check-all"
+                  size={24}
+                  color="white"
+                />
               </View>
-            </TouchableOpacity>
-          )}
+              <View style={styles.buttonTextContainer}>
+                <Text style={styles.buttonTitle}>Complete Order</Text>
+                <Text style={styles.buttonSubtext}>
+                  Order has been delivered
+                </Text>
+              </View>
+            </View>
+          </TouchableOpacity>
+        )}
 
-        {/* Mark Ready - Kitchen & Cashier Only */}
-        {permissions.showButtons.includes("ready") &&
-          order.status === "In Progress" && (
-            <TouchableOpacity
-              style={[styles.primaryButton, styles.readyButton]}
-              onPress={() => onStatusChange("Ready")}
-            >
-              <View style={styles.buttonInner}>
-                <View style={styles.iconContainer}>
-                  <MaterialCommunityIcons
-                    name="check-circle"
-                    size={24}
-                    color="white"
-                  />
-                </View>
-                <View style={styles.buttonTextContainer}>
-                  <Text style={styles.buttonTitle}>Mark as Ready</Text>
-                  <Text style={styles.buttonSubtext}>Order is prepared</Text>
-                </View>
-              </View>
-            </TouchableOpacity>
-          )}
+        {/* Other roles can see their respective buttons */}
+        {userRole !== "cashier" && (
+          <>
+            {/* Accept Order - Kitchen & Cashier Only */}
+            {permissions.showButtons.includes("accept") &&
+              order.status === "Pending" && (
+                <TouchableOpacity
+                  style={[styles.primaryButton, styles.acceptButton]}
+                  onPress={() => onStatusChange("In Progress")}
+                >
+                  <View style={styles.buttonInner}>
+                    <View style={styles.iconContainer}>
+                      <MaterialCommunityIcons
+                        name="progress-check"
+                        size={24}
+                        color="white"
+                      />
+                    </View>
+                    <View style={styles.buttonTextContainer}>
+                      <Text style={styles.buttonTitle}>Accept Order</Text>
+                      <Text style={styles.buttonSubtext}>
+                        Start preparing the order
+                      </Text>
+                    </View>
+                  </View>
+                </TouchableOpacity>
+              )}
 
-        {/* Complete Order - Waiter & Cashier Only */}
-        {permissions.showButtons.includes("complete") &&
-          order.status === "Ready" &&
-          canCompleteOrder() && (
-            <TouchableOpacity
-              style={[styles.primaryButton, styles.completeButton]}
-              onPress={() => onStatusChange("completed")}
-            >
-              <View style={styles.buttonInner}>
-                <View style={styles.iconContainer}>
-                  <MaterialCommunityIcons
-                    name="check-all"
-                    size={24}
-                    color="white"
-                  />
-                </View>
-                <View style={styles.buttonTextContainer}>
-                  <Text style={styles.buttonTitle}>Complete Order</Text>
-                  <Text style={styles.buttonSubtext}>
-                    {userRole === "waiter"
-                      ? "Your order is delivered"
-                      : "Order has been delivered"}
-                  </Text>
-                </View>
-              </View>
-            </TouchableOpacity>
-          )}
+            {/* Mark Ready - Kitchen & Cashier Only */}
+            {permissions.showButtons.includes("ready") &&
+              order.status === "In Progress" && (
+                <TouchableOpacity
+                  style={[styles.primaryButton, styles.readyButton]}
+                  onPress={() => onStatusChange("Ready")}
+                >
+                  <View style={styles.buttonInner}>
+                    <View style={styles.iconContainer}>
+                      <MaterialCommunityIcons
+                        name="check-circle"
+                        size={24}
+                        color="white"
+                      />
+                    </View>
+                    <View style={styles.buttonTextContainer}>
+                      <Text style={styles.buttonTitle}>Mark as Ready</Text>
+                      <Text style={styles.buttonSubtext}>
+                        Order is prepared
+                      </Text>
+                    </View>
+                  </View>
+                </TouchableOpacity>
+              )}
+          </>
+        )}
 
         {/* Secondary Actions - Cashier Only */}
         {(permissions.showButtons.includes("cancel") ||
@@ -381,7 +382,7 @@ const getAvailableStatusesByRole = (
       return [currentStatus];
 
     case "cashier":
-      return availableStatuses; // Cashier can see all available transitions
+      return ["completed"]; // Cashier can see all available transitions
 
     default:
       return [currentStatus];
@@ -420,7 +421,7 @@ const OrderDetail = () => {
   const { user } = useAuth();
   const { isDark, colors } = useThemeColor();
   const themedStyles = getThemedStyles(isDark);
-  const [order, setOrder] = React.useState<OrderDetail | null>(null);
+  const [order, setOrder] = useState<OrderDetail | null>(null);
   const [showStatusModal, setShowStatusModal] = useState(false);
   const [showAddItemModal, setShowAddItemModal] = useState(false);
   const [newStatus, setNewStatus] = useState<(typeof ORDER_STATUSES)[number]>(
@@ -436,6 +437,7 @@ const OrderDetail = () => {
   const [otherReason, setOtherReason] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
   const fetchOrderDetail = async () => {
     try {
@@ -447,8 +449,9 @@ const OrderDetail = () => {
         return;
       }
 
-      const response = await axios.get(`/orders/${order_id}`);
-      setOrder(response.data);
+      const orderDetails = await getOrderDetailsById(order_id as string);
+      console.log("detail order", orderDetails);
+      setOrder(orderDetails);
     } catch (error) {
       console.error("Failed to fetch order details:", error);
       setError("Failed to load order details");
@@ -459,36 +462,30 @@ const OrderDetail = () => {
 
   const handleCancel = async () => {
     if (!cancelReason) {
-      Alert.alert("Error", "Please select a cancellation reason");
-      return;
-    }
-
-    if (cancelReason === "other" && !otherReason) {
-      Alert.alert("Error", "Please specify the reason");
+      Alert.alert("Error", "Please provide a cancellation reason.");
       return;
     }
 
     try {
-      await axios.put(`/orders/cancel/${order_id}/${cancelReason}`, {
-        reason:
-          cancelReason === "other"
-            ? otherReason
-            : CANCELLATION_REASONS.find((r) => r.id === cancelReason)?.reason,
-        reason_code: cancelReason,
-      });
-      router.back();
+      await cancelOrder(order.order_id, cancelReason); // Call the cancel function with reason
+      Alert.alert("Success", "Order has been cancelled.");
+      fetchOrderDetail(); // Refresh order details
+      setShowCancelModal(false); // Close the modal
     } catch (error) {
       console.error("Failed to cancel order:", error);
-      Alert.alert("Error", "Failed to cancel order");
+      Alert.alert("Error", "Failed to cancel order.");
     }
   };
 
   const handleStatusUpdate = async () => {
     try {
-      await axios.put(`/orders/status/${order_id}`, { status: newStatus });
+      // Update the order status in the local SQLite database
+      await updateOrderStatus(order_id as string, newStatus);
+
+      // Fetch the updated order details
       fetchOrderDetail();
       setShowStatusModal(false);
-      router.back();
+      onRefresh();
     } catch (error) {
       console.error("Failed to update status:", error);
       Alert.alert("Error", "Failed to update order status");
@@ -512,7 +509,14 @@ const OrderDetail = () => {
     }
   };
 
-  React.useEffect(() => {
+  // Handle pull-to-refresh
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await fetchOrderDetail(); // Reload order details
+    setRefreshing(false);
+  };
+
+  useEffect(() => {
     fetchOrderDetail();
   }, [order_id]);
 
@@ -581,7 +585,12 @@ const OrderDetail = () => {
   return (
     <ThemedView style={styles.container}>
       <Header title={`Order ${order.order_local_id}`} />
-      <ScrollView style={styles.content}>
+      <ScrollView
+        style={styles.content}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+        }
+      >
         <View
           style={[
             styles.section,
@@ -639,7 +648,7 @@ const OrderDetail = () => {
                       { color: getStatusConfig(order.status).color },
                     ]}
                   >
-                    {order.status.toUpperCase()}
+                    {order?.status?.toUpperCase()}
                   </Text>
                 </View>
               </View>
@@ -792,7 +801,7 @@ const OrderDetail = () => {
                     { color: isDark ? "#FFFFFF" : "#1F2937" },
                   ]}
                 >
-                  {item.quantity} x {item.price} ETB
+                  {item.count} x {item.original_price} ETB
                 </Text>
               </View>
               {item.customization && item.customization.length > 0 && (
@@ -822,7 +831,7 @@ const OrderDetail = () => {
                   { color: isDark ? "#FFFFFF" : "#1F2937" },
                 ]}
               >
-                {order.total_amount} ETB
+                {order.total_price} ETB
               </Text>
               {order.order_type === "Take Away" && (
                 <Text style={styles.takeawayNote}>
@@ -852,8 +861,8 @@ const OrderDetail = () => {
                     order.items.map((item) => ({
                       item_id: item.item_id,
                       name: item.item_name,
-                      price: item.price,
-                      count: item.quantity,
+                      price: item.original_price,
+                      count: item.count,
                       original: true,
                     }))
                   ),
@@ -998,89 +1007,6 @@ const OrderDetail = () => {
                   onPress={handleStatusUpdate}
                 >
                   <Text style={styles.updateButtonText}>Update Status</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </View>
-        </Modal>
-
-        <Modal
-          visible={showAddItemModal}
-          transparent
-          animationType="slide"
-          onRequestClose={() => setShowAddItemModal(false)}
-        >
-          <View style={styles.modalContainer}>
-            <View
-              style={[
-                styles.modalContent,
-                { backgroundColor: isDark ? "#1F2937" : "#FFFFFF" },
-              ]}
-            >
-              <Text
-                style={[
-                  styles.modalTitle,
-                  { color: isDark ? "#FFFFFF" : "#1F2937" },
-                ]}
-              >
-                Add Extra Item
-              </Text>
-              <TextInput
-                style={[
-                  styles.input,
-                  { color: isDark ? "#FFFFFF" : "#1F2937" },
-                ]}
-                placeholder="Item name"
-                placeholderTextColor={isDark ? "#9CA3AF" : "#6B7280"}
-                value={extraItem.item_name}
-                onChangeText={(text) =>
-                  setExtraItem((prev) => ({ ...prev, item_name: text }))
-                }
-              />
-              <TextInput
-                style={[
-                  styles.input,
-                  { color: isDark ? "#FFFFFF" : "#1F2937" },
-                ]}
-                placeholder="Quantity"
-                placeholderTextColor={isDark ? "#9CA3AF" : "#6B7280"}
-                keyboardType="numeric"
-                value={extraItem.quantity.toString()}
-                onChangeText={(text) =>
-                  setExtraItem((prev) => ({
-                    ...prev,
-                    quantity: parseInt(text) || 0,
-                  }))
-                }
-              />
-              <TextInput
-                style={[
-                  styles.input,
-                  { color: isDark ? "#FFFFFF" : "#1F2937" },
-                ]}
-                placeholder="Price"
-                placeholderTextColor={isDark ? "#9CA3AF" : "#6B7280"}
-                keyboardType="numeric"
-                value={extraItem.price.toString()}
-                onChangeText={(text) =>
-                  setExtraItem((prev) => ({
-                    ...prev,
-                    price: parseFloat(text) || 0,
-                  }))
-                }
-              />
-              <View style={styles.modalButtons}>
-                <TouchableOpacity
-                  style={[styles.modalButton, styles.cancelModalButton]}
-                  onPress={() => setShowAddItemModal(false)}
-                >
-                  <Text style={styles.buttonText}>Cancel</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.modalButton, styles.confirmModalButton]}
-                  onPress={handleAddExtraItem}
-                >
-                  <Text style={styles.buttonText}>Add Item</Text>
                 </TouchableOpacity>
               </View>
             </View>
